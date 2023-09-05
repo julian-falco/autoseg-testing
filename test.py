@@ -166,9 +166,12 @@ def run_hierarchical():
             with open(log_fp, "w") as f:
                 json.dump(log_data, f)
         
-        for setup_i, setup in enumerate(("01", "02")):  # custom to two predict functions
-            with Pool() as p:
-                p.map(send_it, all_args)
+        # compile waterz outside of Pool?
+        send_it(all_args[0])
+
+        # for setup_i, setup in enumerate(("01", "02")):  # custom to two predict functions
+        #     with Pool() as p:
+        #         p.map(send_it, all_args)
 
 
 if __name__ == "__main__":
