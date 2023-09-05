@@ -1,7 +1,7 @@
 import os
 import json
 
-os.chdir(os.path.join("..", "testing_logs", "oblique"))
+os.chdir(os.path.join("..", "testing_log", "oblique"))
 
 errors = 0
 total = 0
