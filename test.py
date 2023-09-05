@@ -141,21 +141,21 @@ def run_hierarchical():
             
             # run hierarchical
             log_data["thresholds"] = {}
-            # try:
-            thresh_segs, fragments = hierarchical.post(**kwargs)
-            for threshold_i, threshold in enumerate(sorted(thresh_segs.keys())):
-                seg = thresh_segs[threshold]
-                labels_arr = labels.to_ndarray(pred_roi, fill_value=0)
-                if mask is not None:
-                    mask_arr = mask.to_ndarray(pred_roi, fill_value=0)
-                else:
-                    mask_arr = None
-                metrics = quick_eval.evaluate(seg, labels_arr, mask_arr)
-                log_data["thresholds"][threshold] = metrics
-            log_data["exception"] = ""
+            try:
+                thresh_segs, fragments = hierarchical.post(**kwargs)
+                for threshold_i, threshold in enumerate(sorted(thresh_segs.keys())):
+                    seg = thresh_segs[threshold]
+                    labels_arr = labels.to_ndarray(pred_roi, fill_value=0)
+                    if mask is not None:
+                        mask_arr = mask.to_ndarray(pred_roi, fill_value=0)
+                    else:
+                        mask_arr = None
+                    metrics = quick_eval.evaluate(seg, labels_arr, mask_arr)
+                    log_data["thresholds"][threshold] = metrics
+                log_data["exception"] = ""
             
-            # except:
-            #     log_data["exception"] = traceback.format_exc()
+            except:
+                log_data["exception"] = traceback.format_exc()
             
             finish_time = time.time()
 
