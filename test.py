@@ -6,6 +6,9 @@ from itertools import product
 from funlib.persistence import open_ds
 from multiprocess import Pool
 
+scripts_path = os.path.join(__file__, "..")
+sys.path.append(scripts_path)
+
 import hierarchical
 import quick_eval
 
