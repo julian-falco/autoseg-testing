@@ -13,7 +13,7 @@ for fname in os.listdir("."):
         if log_data["exception"]:
             errors += 1
         else:
-            times.append(log_data["time_elapsed"])
+            times.append(float(log_data["time_elapsed"]))
             print(fname)
 
 print(f"Average time per case: {sum(times)/(total-errors)}")
