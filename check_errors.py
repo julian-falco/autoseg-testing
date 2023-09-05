@@ -5,6 +5,7 @@ os.chdir(os.path.join("..", "testing_log", "oblique"))
 
 errors = 0
 total = 0
+times = []
 for fname in os.listdir("."):
     with open(fname, "r") as f:
         total += 1
@@ -12,6 +13,8 @@ for fname in os.listdir("."):
         if log_data["exception"]:
             errors += 1
         else:
+            times.append(log_data["time_elapsed"])
             print(fname)
 
+print(f"Average time per case: {sum(times)/(total-errors)}")
 print(f"Errors: {errors}/{total}")
