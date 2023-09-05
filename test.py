@@ -69,7 +69,7 @@ def run_hierarchical():
     shape += [len(args) for args in config["predict_kwargs"].values()]
     shape += [len(args) for args in config["segment_kwargs"].values()]
     shape += [20]  # for thresholds
-    total_combos = np.product(shape)
+    total_combos = np.prod(shape)
     
     if not os.path.isdir("testing_log"):
         os.mkdir("testing_log")
@@ -102,7 +102,7 @@ def run_hierarchical():
         def send_it(arg_set):
             # get the indexes
             indexes = [setup_i] + [arg[0] for arg in arg_set]
-            indexes_basename = "-".join(indexes) + ".json"
+            indexes_basename = "-".join(map(str, indexes)) + ".json"
             # skip the test if already performed
             log_fp = os.path.join("testing_log", group_name, indexes_basename)
             if os.path.isdir(os.path.join(log_fp)):
