@@ -10,6 +10,7 @@ from multiprocess import Pool
 
 self_dir = os.path.abspath(os.path.dirname(os.path.realpath(__file__)))
 scripts_path = os.path.join(self_dir, "..")
+sys.path.append(scripts_path)
 os.chdir(scripts_path)
 
 import hierarchical
