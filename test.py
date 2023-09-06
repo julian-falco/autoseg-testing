@@ -63,33 +63,54 @@ def run_predictions():
             # run predict
             predict(**kwargs)
         
-def send_it(arg_set):
+def send_it(kwargs):
     # get the indexes
-    indexes = [setup_i] + [arg[0] for arg in arg_set]
+    indexes = [i for i, v in kwargs.values()]
     indexes_basename = "-".join(map(str, indexes)) + ".json"
+
+    # get the group name
+    series = kwargs["series"][1]
+    group_name = os.path.basename(series)[:-5]  # remove .zarr extension
+    if not os.path.isdir(os.path.join("testing_log", group_name)):  # create folder if not already
+        os.mkdir(os.path.join("testing_log", group_name))
+
     # skip the test if already performed
     log_fp = os.path.join("testing_log", group_name, indexes_basename)
     if os.path.isdir(os.path.join(log_fp)):
         return
     
     start_time = time.time()
+
+    # load the zarr files
+    pred_file = os.path.basename(series)
+    labels = open_ds(
+        series,
+        "labels/s2"
+    )
+    try:
+        mask = open_ds(
+            series,
+            "labels_mask/s2"
+        )
+    except:
+        mask = None
     
     # create the json dictionary
     log_data = {}
-    
-    # get the kwargs
-    values = tuple([arg[1] for arg in arg_set])
-    kwargs = dict(zip(keys, values))
 
     # get datasets and roi
-    pred_ds = f"affs_{setup}_{kwargs['iterations']}"
+    setup = kwargs["setup"][1]   
+    pred_ds = f"affs_{setup}_{kwargs['iterations'][1]}"
     pred_roi = open_ds(pred_file, pred_ds).roi
     intersect_roi = labels.roi.intersect(pred_roi)
     
-    # add custom kwargs
-    kwargs["pred_file"] = pred_file
-    kwargs["pred_dataset"] = pred_ds
-    kwargs["roi"] = (tuple(intersect_roi.offset - pred_roi.offset), tuple(intersect_roi.shape))
+    # create hierarchical kwargs set
+    hkwargs = {}
+    for seg_key in config["segment_kwargs"].keys():
+        hkwargs[seg_key] = kwargs[seg_key][1]
+    hkwargs["pred_file"] = pred_file
+    hkwargs["pred_dataset"] = pred_ds
+    hkwargs["roi"] = (tuple(intersect_roi.offset - pred_roi.offset), tuple(intersect_roi.shape))
     
     # output kwargs to user
     print(f"Setup {setup}")
@@ -98,16 +119,12 @@ def send_it(arg_set):
     
     # add kwargs to json file
     log_data["kwargs"] = kwargs.copy()
-
-    # remove kwargs from predict function
-    for k in config["predict_kwargs"]:
-        del(kwargs[k])
     
     # run hierarchical
     log_data["thresholds"] = {}
     try:
-        thresh_segs, fragments = hierarchical.post(**kwargs)
-        for threshold_i, threshold in enumerate(sorted(thresh_segs.keys())):
+        thresh_segs, fragments = hierarchical.post(**hkwargs)
+        for threshold in sorted(thresh_segs.keys()):
             seg = thresh_segs[threshold]
             labels_arr = labels.to_ndarray(pred_roi, fill_value=0)
             if mask is not None:
@@ -132,40 +149,28 @@ def send_it(arg_set):
 
 if __name__ == "__main__":
     # formerly run_hierarchical
-    shape = [2]  # custom: for the two predict functions
-    shape += [len(args) for args in config["predict_kwargs"].values()]
-    shape += [len(args) for args in config["segment_kwargs"].values()]
-    shape += [20]  # for thresholds
-    total_combos = np.prod(shape)
+    # shape = [2]  # custom: for the two predict functions
+    # shape += [len(args) for args in config["predict_kwargs"].values()]
+    # shape += [len(args) for args in config["segment_kwargs"].values()]
+    # shape += [20]  # for thresholds
+    # total_combos = np.prod(shape)
     
     if not os.path.isdir("testing_log"):
         os.mkdir("testing_log")
     
-    # set up product
-    product_args = [enumerate(args) for args in config["predict_kwargs"].values()]
-    product_args += [enumerate(args) for args in config["segment_kwargs"].values()]
-    all_args = product(*tuple(product_args))
-    keys = tuple(list(config["predict_kwargs"].keys()) + 
-                 list(config["segment_kwargs"].keys()))
+    # set up all arguments
+    product_args = [enumerate(args) for args in config["series_fp"]]  # series
+    product_args += [enumerate(args) for args in ("01", "02")]  # setup
+    product_args += [enumerate(args) for args in config["predict_kwargs"].values()]  # predictions
+    product_args += [enumerate(args) for args in config["segment_kwargs"].values()]  # hierarchical
+    all_arg_sets = product(*tuple(product_args))
+
+    keys = (
+        ["series", "setup"] +
+        list(config["predict_kwargs"].keys()) +
+        list(config["segment_kwargs"].keys())
+    )
+    kwargs_list = [dict(zip(keys, arg_set)) for arg_set in all_arg_sets]    
     
-    # run the grid thing
-    for series in config["series_fp"]: 
-        group_name = os.path.basename(series)[:-5]  # remove .zarr extension
-        if not os.path.isdir(os.path.join("testing_log", group_name)):
-            os.mkdir(os.path.join("testing_log", group_name))
-        pred_file = os.path.basename(series)
-        labels = open_ds(
-            series,
-            "labels/s2"
-        )
-        try:
-            mask = open_ds(
-                series,
-                "labels_mask/s2"
-            )
-        except:
-            mask = None
-    
-    for setup_i, setup in enumerate(("01", "02")):  # custom to two predict functions
-        with multiprocessing.get_context("spawn").Pool(20, maxtasksperchild=1) as p:
-            p.map(send_it, all_args)
+    with multiprocessing.get_context("spawn").Pool(20, maxtasksperchild=1) as p:
+        p.map(send_it, kwargs_list)
