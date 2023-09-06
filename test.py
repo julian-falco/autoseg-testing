@@ -6,7 +6,7 @@ import time
 import traceback
 from itertools import product
 from funlib.persistence import open_ds
-from multiprocess import Pool
+import multiprocessing
 
 self_dir = os.path.abspath(os.path.dirname(os.path.realpath(__file__)))
 scripts_path = os.path.join(self_dir, "..")
@@ -62,9 +62,76 @@ def run_predictions():
             kwargs["out_file"] = out_file
             # run predict
             predict(**kwargs)
+        
+def send_it(arg_set):
+    # get the indexes
+    indexes = [setup_i] + [arg[0] for arg in arg_set]
+    indexes_basename = "-".join(map(str, indexes)) + ".json"
+    # skip the test if already performed
+    log_fp = os.path.join("testing_log", group_name, indexes_basename)
+    if os.path.isdir(os.path.join(log_fp)):
+        return
+    
+    start_time = time.time()
+    
+    # create the json dictionary
+    log_data = {}
+    
+    # get the kwargs
+    values = tuple([arg[1] for arg in arg_set])
+    kwargs = dict(zip(keys, values))
 
-def run_hierarchical():
-    # set up the zarr grid
+    # get datasets and roi
+    pred_ds = f"affs_{setup}_{kwargs['iterations']}"
+    pred_roi = open_ds(pred_file, pred_ds).roi
+    intersect_roi = labels.roi.intersect(pred_roi)
+    
+    # add custom kwargs
+    kwargs["pred_file"] = pred_file
+    kwargs["pred_dataset"] = pred_ds
+    kwargs["roi"] = (tuple(intersect_roi.offset - pred_roi.offset), tuple(intersect_roi.shape))
+    
+    # output kwargs to user
+    print(f"Setup {setup}")
+    print(kwargs)
+    print()
+    
+    # add kwargs to json file
+    log_data["kwargs"] = kwargs.copy()
+
+    # remove kwargs from predict function
+    for k in config["predict_kwargs"]:
+        del(kwargs[k])
+    
+    # run hierarchical
+    log_data["thresholds"] = {}
+    try:
+        thresh_segs, fragments = hierarchical.post(**kwargs)
+        for threshold_i, threshold in enumerate(sorted(thresh_segs.keys())):
+            seg = thresh_segs[threshold]
+            labels_arr = labels.to_ndarray(pred_roi, fill_value=0)
+            if mask is not None:
+                mask_arr = mask.to_ndarray(pred_roi, fill_value=0)
+            else:
+                mask_arr = None
+            metrics = quick_eval.evaluate(seg, labels_arr, mask_arr)
+            log_data["thresholds"][threshold] = metrics
+        log_data["exception"] = ""
+    
+    except:
+        log_data["exception"] = traceback.format_exc()
+    
+    finish_time = time.time()
+
+    log_data["start_time"] = f"{start_time:.2f}"
+    log_data["finish_time"] = f"{finish_time:.2f}"
+    log_data["time_elapsed"] = f"{finish_time - start_time:.2f}"
+
+    with open(log_fp, "w") as f:
+        json.dump(log_data, f)
+
+if __name__ == "__main__":
+    # formerly run_hierarchical
     shape = [2]  # custom: for the two predict functions
     shape += [len(args) for args in config["predict_kwargs"].values()]
     shape += [len(args) for args in config["segment_kwargs"].values()]
@@ -98,78 +165,7 @@ def run_hierarchical():
             )
         except:
             mask = None
-        
-        def send_it(arg_set):
-            # get the indexes
-            indexes = [setup_i] + [arg[0] for arg in arg_set]
-            indexes_basename = "-".join(map(str, indexes)) + ".json"
-            # skip the test if already performed
-            log_fp = os.path.join("testing_log", group_name, indexes_basename)
-            if os.path.isdir(os.path.join(log_fp)):
-                return
-            
-            start_time = time.time()
-            
-            # create the json dictionary
-            log_data = {}
-            
-            # get the kwargs
-            values = tuple([arg[1] for arg in arg_set])
-            kwargs = dict(zip(keys, values))
-
-            # get datasets and roi
-            pred_ds = f"affs_{setup}_{kwargs['iterations']}"
-            pred_roi = open_ds(pred_file, pred_ds).roi
-            intersect_roi = labels.roi.intersect(pred_roi)
-            
-            # add custom kwargs
-            kwargs["pred_file"] = pred_file
-            kwargs["pred_dataset"] = pred_ds
-            kwargs["roi"] = (tuple(intersect_roi.offset - pred_roi.offset), tuple(intersect_roi.shape))
-            
-            # output kwargs to user
-            print(f"Setup {setup}")
-            print(kwargs)
-            print()
-            
-            # add kwargs to json file
-            log_data["kwargs"] = kwargs.copy()
-
-            # remove kwargs from predict function
-            for k in config["predict_kwargs"]:
-                del(kwargs[k])
-            
-            # run hierarchical
-            log_data["thresholds"] = {}
-            try:
-                thresh_segs, fragments = hierarchical.post(**kwargs)
-                for threshold_i, threshold in enumerate(sorted(thresh_segs.keys())):
-                    seg = thresh_segs[threshold]
-                    labels_arr = labels.to_ndarray(pred_roi, fill_value=0)
-                    if mask is not None:
-                        mask_arr = mask.to_ndarray(pred_roi, fill_value=0)
-                    else:
-                        mask_arr = None
-                    metrics = quick_eval.evaluate(seg, labels_arr, mask_arr)
-                    log_data["thresholds"][threshold] = metrics
-                log_data["exception"] = ""
-            
-            except:
-                log_data["exception"] = traceback.format_exc()
-            
-            finish_time = time.time()
-
-            log_data["start_time"] = f"{start_time:.2f}"
-            log_data["finish_time"] = f"{finish_time:.2f}"
-            log_data["time_elapsed"] = f"{finish_time - start_time:.2f}"
-
-            with open(log_fp, "w") as f:
-                json.dump(log_data, f)
-
-        for setup_i, setup in enumerate(("01", "02")):  # custom to two predict functions
-            with Pool() as p:
-                p.map(send_it, all_args)
-
-
-if __name__ == "__main__":
-    run_hierarchical()
+    
+    for setup_i, setup in enumerate(("01", "02")):  # custom to two predict functions
+        with multiprocessing.get_context("spawn").Pool(20, maxtasksperchild=1) as p:
+            p.map(send_it, all_args)
